@@ -21,6 +21,7 @@ const eqSettings = [
 ];
 
 const BINAURAL_OFFSET = 4; // Hz difference between hemispheres
+let mirrorEnabled = true;
 
 
 function createEQ() {
@@ -61,6 +62,7 @@ class Node {
         this.freq = opts.freq || getMusicalFrequency();
         this.pan = opts.pan || 0;
         this.mirror = opts.mirror || null;
+        this.parent = opts.parent || null;
         if (audioCtx) this.createOscillator();
     }
 
@@ -124,6 +126,33 @@ class Node {
     }
 }
 
+class Particle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 1.5;
+        this.vy = (Math.random() - 0.5) * 1.5;
+        this.alpha = 1;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha *= 0.96;
+    }
+    draw(ctx) {
+        ctx.fillStyle = `rgba(160,255,160,${this.alpha})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+const particles = [];
+
+function spawnParticles(x, y) {
+    for (let i = 0; i < 20; i++) particles.push(new Particle(x, y));
+}
+
 const nodes = [];
 let dragNode = null;
 let dragging = false;
@@ -143,6 +172,14 @@ function draw() {
     ctx.strokeStyle = '#88ff88';
     ctx.lineWidth = 2;
     ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#88ff88';
+    ctx.shadowBlur = 15;
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        particles[i].draw(ctx);
+        if (particles[i].alpha < 0.05) particles.splice(i, 1);
+    }
 
     for (const n of nodes) {
         for (const edge of n.children) {
@@ -166,6 +203,7 @@ function draw() {
         ctx.quadraticCurveTo(dragNode.temp.cp.x, dragNode.temp.cp.y, dragNode.temp.x, dragNode.temp.y);
         ctx.stroke();
     }
+    ctx.shadowBlur = 0;
 
     requestAnimationFrame(draw);
 }
@@ -174,6 +212,23 @@ draw();
 
 function findNode(x, y) {
     return nodes.find(n => Math.hypot(n.x - x, n.y - y) < n.radius + 2);
+}
+
+function removeNode(node, skipMirror = false) {
+    if (!node || node === nodes[0]) return;
+    node.children.slice().forEach(edge => removeNode(edge.node));
+    if (node.osc) node.osc.stop();
+    if (node.gainNode) node.gainNode.disconnect();
+    if (node.parent) {
+        node.parent.children = node.parent.children.filter(e => e.node !== node);
+    }
+    nodes.splice(nodes.indexOf(node), 1);
+    if (!skipMirror && node.mirror && node.mirror !== node) {
+        const m = node.mirror;
+        node.mirror = null;
+        m.mirror = null;
+        removeNode(m, true);
+    }
 }
 
 canvas.addEventListener('mousedown', (e) => {
@@ -206,31 +261,50 @@ canvas.addEventListener('mouseup', (e) => {
         const mid = canvas.width / 2;
         const pan = x < mid ? -1 : 1;
         const freq = getMusicalFrequency();
-        const newNode = new Node(x, y, { freq, pan });
+        const newNode = new Node(x, y, { freq, pan, parent: dragNode });
         nodes.push(newNode);
         dragNode.children.push({ node: newNode, cp });
+        spawnParticles(x, y);
 
-        const mirrorParent = dragNode.mirror || dragNode;
-        const mirrorX = 2 * mid - x;
-        const cpMirror = computeControlPoint(mirrorParent, { x: mirrorX, y });
-        const mirrorPan = mirrorX < mid ? -1 : 1;
-        const mirrorNode = new Node(mirrorX, y, {
-            freq: freq + BINAURAL_OFFSET,
-            pan: mirrorPan,
-            mirror: newNode
-        });
-        newNode.mirror = mirrorNode;
-        nodes.push(mirrorNode);
-        mirrorParent.children.push({ node: mirrorNode, cp: cpMirror });
+        if (mirrorEnabled) {
+            const mirrorParent = dragNode.mirror || dragNode;
+            const mirrorX = 2 * mid - x;
+            const cpMirror = computeControlPoint(mirrorParent, { x: mirrorX, y });
+            const mirrorPan = mirrorX < mid ? -1 : 1;
+            const mirrorNode = new Node(mirrorX, y, {
+                freq: freq + BINAURAL_OFFSET,
+                pan: mirrorPan,
+                mirror: newNode,
+                parent: mirrorParent
+            });
+            newNode.mirror = mirrorNode;
+            nodes.push(mirrorNode);
+            mirrorParent.children.push({ node: mirrorNode, cp: cpMirror });
+            spawnParticles(mirrorX, y);
+        }
         delete dragNode.temp;
         dragNode = null;
         dragging = false;
     }
 });
 
+canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const node = findNode(x, y);
+    removeNode(node);
+});
+
 const startBtn = document.getElementById('startBtn');
+const mirrorBtn = document.getElementById('mirrorBtn');
 const eqControls = document.getElementById('eqControls');
 const sliders = [];
+mirrorBtn.addEventListener('click', () => {
+    mirrorEnabled = !mirrorEnabled;
+    mirrorBtn.textContent = mirrorEnabled ? 'Mirror On' : 'Mirror Off';
+});
 startBtn.addEventListener('click', () => {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -243,7 +317,7 @@ startBtn.addEventListener('click', () => {
         eqFilters[eqFilters.length - 1].connect(masterGain);
 
         // ––– From main (with the new radius option):
-        const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20, pan: 0 });
+        const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20, pan: 0, parent: null });
         rootNode.mirror = rootNode;
         nodes.push(rootNode);
         startBtn.style.display = 'none';
