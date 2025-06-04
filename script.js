@@ -20,7 +20,29 @@ const eqSettings = [
     { freq: 8000, Q: 0.8 }
 ];
 
-const BINAURAL_OFFSET = 4; // Hz difference between hemispheres
+const particles = [];
+
+function spawnParticles(x, y) {
+    for (let i = 0; i < 20; i++) {
+        particles.push({
+            x,
+            y,
+            vx: (Math.random() - 0.5) * 3,
+            vy: (Math.random() - 0.5) * 3,
+            alpha: 1,
+            r: 2 + Math.random() * 3
+        });
+    }
+    particles.push({
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        alpha: 0.6,
+        r: 10
+    });
+}
+
 
 
 function createEQ() {
@@ -60,7 +82,6 @@ class Node {
         this.panner = null;
         this.freq = opts.freq || getMusicalFrequency();
         this.pan = opts.pan || 0;
-        this.mirror = opts.mirror || null;
         if (audioCtx) this.createOscillator();
     }
 
@@ -109,6 +130,25 @@ function draw() {
     ctx.lineWidth = 2;
     ctx.fillStyle = '#ffffff';
 
+    // particle effects
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.02;
+        if (p.alpha <= 0) {
+            particles.splice(i, 1);
+            continue;
+        }
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = '#66ff66';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+
     for (const n of nodes) {
         for (const edge of n.children) {
             ctx.beginPath();
@@ -120,9 +160,13 @@ function draw() {
     }
 
     for (const n of nodes) {
+        ctx.save();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#00ff66';
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
     }
 
     if (dragging && dragNode && dragNode.temp) {
@@ -174,19 +218,8 @@ canvas.addEventListener('mouseup', (e) => {
         const newNode = new Node(x, y, { freq, pan });
         nodes.push(newNode);
         dragNode.children.push({ node: newNode, cp });
+        spawnParticles(x, y);
 
-        const mirrorParent = dragNode.mirror || dragNode;
-        const mirrorX = 2 * mid - x;
-        const cpMirror = computeControlPoint(mirrorParent, { x: mirrorX, y });
-        const mirrorPan = mirrorX < mid ? -1 : 1;
-        const mirrorNode = new Node(mirrorX, y, {
-            freq: freq + BINAURAL_OFFSET,
-            pan: mirrorPan,
-            mirror: newNode
-        });
-        newNode.mirror = mirrorNode;
-        nodes.push(mirrorNode);
-        mirrorParent.children.push({ node: mirrorNode, cp: cpMirror });
         delete dragNode.temp;
         dragNode = null;
         dragging = false;
@@ -209,8 +242,8 @@ startBtn.addEventListener('click', () => {
 
         // ––– From main (with the new radius option):
         const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20, pan: 0 });
-        rootNode.mirror = rootNode;
         nodes.push(rootNode);
+        spawnParticles(rootNode.x, rootNode.y);
         startBtn.style.display = 'none';
         eqControls.style.display = 'flex';
 
