@@ -26,6 +26,26 @@ body {
     font-size: 0.9em;
 }
 
+#eqControls {
+    position: absolute;
+    top: 10px;
+    left: 140px;
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+}
+
+#eqControls label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8em;
+    align-items: center;
+}
+
+#eqControls input[type="range"] {
+    width: 80px;
+}
+
 canvas {
     display: block;
     width: 100vw;
