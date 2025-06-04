@@ -10,6 +10,58 @@ window.addEventListener('resize', () => {
 
 let audioCtx;
 let masterGain;
+let noiseSource;
+let eqFilters = [];
+const eqSettings = [
+    { freq: 60, Q: 0.7 },
+    { freq: 200, Q: 0.8 },
+    { freq: 800, Q: 0.6 },
+    { freq: 2500, Q: 0.9 },
+    { freq: 8000, Q: 0.8 }
+];
+
+const presets = {
+    dark:  [8, 4, 0, 0, 0],
+    brown: [4, 6, 2, -2, -4],
+    pink:  [2, 3, 1, -1, -3],
+    green: [0, 0, 4, 3, 0],
+    white: [0, 0, 0, 0, 0]
+};
+
+function createEQ() {
+    eqFilters = eqSettings.map((b) => {
+        const f = audioCtx.createBiquadFilter();
+        f.type = 'peaking';
+        f.frequency.value = b.freq;
+        f.Q.value = b.Q;
+        f.gain.value = 0;
+        return f;
+    });
+    for (let i = 0; i < eqFilters.length - 1; i++) {
+        eqFilters[i].connect(eqFilters[i + 1]);
+    }
+    return eqFilters[0];
+}
+
+function createNoise() {
+    const bufferSize = 2 * audioCtx.sampleRate;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    return src;
+}
+
+function applyPreset(name) {
+    const gains = presets[name] || presets.white;
+    eqFilters.forEach((f, i) => {
+        f.gain.setValueAtTime(gains[i], audioCtx.currentTime);
+    });
+}
 
 class Node {
     constructor(x, y) {
@@ -107,14 +159,27 @@ canvas.addEventListener('mouseup', (e) => {
 });
 
 const startBtn = document.getElementById('startBtn');
+const colorSelect = document.getElementById('colorSelect');
 startBtn.addEventListener('click', () => {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         masterGain = audioCtx.createGain();
         masterGain.connect(audioCtx.destination);
         masterGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        const eqInput = createEQ();
+        noiseSource = createNoise();
+        noiseSource.connect(eqInput).connect(masterGain);
+        noiseSource.start();
         const rootNode = new Node(canvas.width / 2, canvas.height / 2);
         nodes.push(rootNode);
         startBtn.style.display = 'none';
+        colorSelect.style.display = 'inline-block';
+        applyPreset('white');
+    }
+});
+
+colorSelect.addEventListener('change', (e) => {
+    if (audioCtx) {
+        applyPreset(e.target.value);
     }
 });
