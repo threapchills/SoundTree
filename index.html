@@ -8,13 +8,23 @@
 </head>
 <body>
 <button id="startBtn">Start Drone</button>
-<select id="colorSelect" style="display:none;">
-    <option value="white">White</option>
-    <option value="pink">Pink</option>
-    <option value="brown">Brown</option>
-    <option value="green">Green</option>
-    <option value="dark">Dark</option>
-</select>
+<div id="eqControls" style="display:none;">
+    <label>Dark
+        <input type="range" id="darkSlider" min="-12" max="12" value="0" step="0.1">
+    </label>
+    <label>Brown
+        <input type="range" id="brownSlider" min="-10" max="10" value="0" step="0.1">
+    </label>
+    <label>Pink
+        <input type="range" id="pinkSlider" min="-8" max="8" value="0" step="0.1">
+    </label>
+    <label>Green
+        <input type="range" id="greenSlider" min="-6" max="6" value="0" step="0.1">
+    </label>
+    <label>White
+        <input type="range" id="whiteSlider" min="-8" max="8" value="0" step="0.1">
+    </label>
+</div>
 <canvas id="treeCanvas"></canvas>
 <script src="script.js"></script>
 </body>
