@@ -73,19 +73,54 @@ class Node {
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(1200, audioCtx.currentTime);
 
+        // subtle noise source blended into each node
+        const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+        const data = noiseBuf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = noiseBuf;
+        noise.loop = true;
+        const noiseFilter = audioCtx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 1000;
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.value = 0.02;
+        noise.connect(noiseFilter).connect(noiseGain);
+
         this.gainNode = audioCtx.createGain();
         this.gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
 
         this.panner = audioCtx.createStereoPanner();
         this.panner.pan.setValueAtTime(this.pan, audioCtx.currentTime);
 
+        // LFO for gentle frequency modulation
+        const lfo = audioCtx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = Math.random() * 0.3 + 0.1; // 0.1-0.4 Hz
+        const lfoGain = audioCtx.createGain();
+        lfoGain.gain.value = 5; // Hz depth
+        lfo.connect(lfoGain).connect(this.osc.frequency);
+        lfo.start();
+
+        // LFO for subtle amplitude modulation
+        const ampLfo = audioCtx.createOscillator();
+        ampLfo.type = 'sine';
+        ampLfo.frequency.value = Math.random() * 0.2 + 0.05; // 0.05-0.25 Hz
+        const ampLfoGain = audioCtx.createGain();
+        ampLfoGain.gain.value = 0.02;
+        ampLfo.connect(ampLfoGain).connect(this.gainNode.gain);
+        ampLfo.start();
+
         this.osc
             .connect(filter)
-            .connect(this.gainNode)
+            .connect(this.gainNode);
+        noiseGain.connect(this.gainNode);
+        this.gainNode
             .connect(this.panner)
             .connect(eqInput);
 
         this.osc.start();
+        noise.start();
     }
 }
 
