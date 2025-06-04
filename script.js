@@ -20,6 +20,8 @@ const eqSettings = [
     { freq: 8000, Q: 0.8 }
 ];
 
+const BINAURAL_OFFSET = 4; // Hz difference between hemispheres
+
 
 function createEQ() {
     eqFilters = eqSettings.map((b) => {
@@ -55,17 +57,34 @@ class Node {
         this.children = []; // { node, cp }
         this.osc = null;
         this.gainNode = null;
+        this.panner = null;
+        this.freq = opts.freq || getMusicalFrequency();
+        this.pan = opts.pan || 0;
+        this.mirror = opts.mirror || null;
         if (audioCtx) this.createOscillator();
     }
 
     createOscillator() {
         this.osc = audioCtx.createOscillator();
+        this.osc.type = 'sawtooth';
+        this.osc.frequency.setValueAtTime(this.freq, audioCtx.currentTime);
+
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1200, audioCtx.currentTime);
+
         this.gainNode = audioCtx.createGain();
-        const freq = getMusicalFrequency();
-        this.osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        this.osc.type = 'sine';
         this.gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
-        this.osc.connect(this.gainNode).connect(eqInput);
+
+        this.panner = audioCtx.createStereoPanner();
+        this.panner.pan.setValueAtTime(this.pan, audioCtx.currentTime);
+
+        this.osc
+            .connect(filter)
+            .connect(this.gainNode)
+            .connect(this.panner)
+            .connect(eqInput);
+
         this.osc.start();
     }
 }
@@ -149,9 +168,25 @@ canvas.addEventListener('mouseup', (e) => {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         const cp = computeControlPoint(dragNode, { x, y });
-        const newNode = new Node(x, y);
+        const mid = canvas.width / 2;
+        const pan = x < mid ? -1 : 1;
+        const freq = getMusicalFrequency();
+        const newNode = new Node(x, y, { freq, pan });
         nodes.push(newNode);
         dragNode.children.push({ node: newNode, cp });
+
+        const mirrorParent = dragNode.mirror || dragNode;
+        const mirrorX = 2 * mid - x;
+        const cpMirror = computeControlPoint(mirrorParent, { x: mirrorX, y });
+        const mirrorPan = mirrorX < mid ? -1 : 1;
+        const mirrorNode = new Node(mirrorX, y, {
+            freq: freq + BINAURAL_OFFSET,
+            pan: mirrorPan,
+            mirror: newNode
+        });
+        newNode.mirror = mirrorNode;
+        nodes.push(mirrorNode);
+        mirrorParent.children.push({ node: mirrorNode, cp: cpMirror });
         delete dragNode.temp;
         dragNode = null;
         dragging = false;
@@ -173,8 +208,8 @@ startBtn.addEventListener('click', () => {
         eqFilters[eqFilters.length - 1].connect(masterGain);
 
         // ––– From main (with the new radius option):
-        const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20 });
-
+        const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20, pan: 0 });
+        rootNode.mirror = rootNode;
         nodes.push(rootNode);
         startBtn.style.display = 'none';
         eqControls.style.display = 'flex';
