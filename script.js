@@ -10,7 +10,7 @@ window.addEventListener('resize', () => {
 
 let audioCtx;
 let masterGain;
-let noiseSource;
+let eqInput;
 let eqFilters = [];
 const eqSettings = [
     { freq: 60, Q: 0.7 },
@@ -20,13 +20,6 @@ const eqSettings = [
     { freq: 8000, Q: 0.8 }
 ];
 
-const presets = {
-    dark:  [8, 4, 0, 0, 0],
-    brown: [4, 6, 2, -2, -4],
-    pink:  [2, 3, 1, -1, -3],
-    green: [0, 0, 4, 3, 0],
-    white: [0, 0, 0, 0, 0]
-};
 
 function createEQ() {
     eqFilters = eqSettings.map((b) => {
@@ -43,25 +36,7 @@ function createEQ() {
     return eqFilters[0];
 }
 
-function createNoise() {
-    const bufferSize = 2 * audioCtx.sampleRate;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-    }
-    const src = audioCtx.createBufferSource();
-    src.buffer = buffer;
-    src.loop = true;
-    return src;
-}
 
-function applyPreset(name) {
-    const gains = presets[name] || presets.white;
-    eqFilters.forEach((f, i) => {
-        f.gain.setValueAtTime(gains[i], audioCtx.currentTime);
-    });
-}
 
 function getMusicalFrequency() {
     // minor pentatonic around A3/A4
@@ -90,7 +65,7 @@ class Node {
         this.osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
         this.osc.type = 'sine';
         this.gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
-        this.osc.connect(this.gainNode).connect(masterGain);
+        this.osc.connect(this.gainNode).connect(eqInput);
         this.osc.start();
     }
 }
@@ -184,7 +159,8 @@ canvas.addEventListener('mouseup', (e) => {
 });
 
 const startBtn = document.getElementById('startBtn');
-const colorSelect = document.getElementById('colorSelect');
+const eqControls = document.getElementById('eqControls');
+const sliders = [];
 startBtn.addEventListener('click', () => {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -192,24 +168,26 @@ startBtn.addEventListener('click', () => {
         masterGain.connect(audioCtx.destination);
         masterGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
 
-        // ––– From codex/add-5-band-parametric-eq-feature:
-        const eqInput = createEQ();
-        noiseSource = createNoise();
-        noiseSource.connect(eqInput).connect(masterGain);
-        noiseSource.start();
+        // create EQ and connect to output
+        eqInput = createEQ();
+        eqFilters[eqFilters.length - 1].connect(masterGain);
 
         // ––– From main (with the new radius option):
         const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20 });
 
         nodes.push(rootNode);
         startBtn.style.display = 'none';
-        colorSelect.style.display = 'inline-block';
-        applyPreset('white');
-    }
-});
+        eqControls.style.display = 'flex';
 
-colorSelect.addEventListener('change', (e) => {
-    if (audioCtx) {
-        applyPreset(e.target.value);
+        // hook sliders to EQ bands
+        const ids = ['darkSlider','brownSlider','pinkSlider','greenSlider','whiteSlider'];
+        ids.forEach((id, i) => {
+            const el = document.getElementById(id);
+            sliders[i] = el;
+            el.addEventListener('input', () => {
+                const val = parseFloat(el.value);
+                eqFilters[i].gain.setValueAtTime(val, audioCtx.currentTime);
+            });
+        });
     }
 });
