@@ -20,6 +20,40 @@ const eqSettings = [
     { freq: 8000, Q: 0.8 }
 ];
 
+const particles = [];
+
+function spawnParticles(x, y, count = 20) {
+    for (let i = 0; i < count; i++) {
+        particles.push({
+            x,
+            y,
+            vx: (Math.random() - 0.5) * 2,
+            vy: (Math.random() - 0.5) * 2,
+            life: 1
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.02;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+
+function drawParticles() {
+    for (const p of particles) {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = 'rgba(255,255,200,1)';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+}
 
 function createEQ() {
     eqFilters = eqSettings.map((b) => {
@@ -56,6 +90,7 @@ class Node {
         this.osc = null;
         this.gainNode = null;
         if (audioCtx) this.createOscillator();
+        spawnParticles(this.x, this.y);
     }
 
     createOscillator() {
@@ -86,9 +121,12 @@ function computeControlPoint(startNode, endPos) {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    updateParticles();
+    drawParticles();
+
     ctx.strokeStyle = '#88ff88';
     ctx.lineWidth = 2;
-    ctx.fillStyle = '#ffffff';
 
     for (const n of nodes) {
         for (const edge of n.children) {
@@ -101,6 +139,15 @@ function draw() {
     }
 
     for (const n of nodes) {
+        const g = ctx.createRadialGradient(n.x, n.y, n.radius, n.x, n.y, n.radius * 4);
+        g.addColorStop(0, 'rgba(120,255,120,0.8)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.radius * 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -152,6 +199,7 @@ canvas.addEventListener('mouseup', (e) => {
         const newNode = new Node(x, y);
         nodes.push(newNode);
         dragNode.children.push({ node: newNode, cp });
+        spawnParticles(dragNode.x, dragNode.y, 10);
         delete dragNode.temp;
         dragNode = null;
         dragging = false;
@@ -176,6 +224,7 @@ startBtn.addEventListener('click', () => {
         const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20 });
 
         nodes.push(rootNode);
+        spawnParticles(rootNode.x, rootNode.y, 30);
         startBtn.style.display = 'none';
         eqControls.style.display = 'flex';
 
