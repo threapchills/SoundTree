@@ -1,11 +1,25 @@
 const canvas = document.getElementById('treeCanvas');
 const ctx = canvas.getContext('2d');
+const glCanvas = document.getElementById('glCanvas');
+const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, alpha: true });
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.z = 80;
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+let starField;
+init3D();
+animate3D(0);
+
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 window.addEventListener('resize', () => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
 });
 
 let audioCtx;
@@ -23,6 +37,7 @@ const eqSettings = [
 ];
 
 const BINAURAL_OFFSET = 4; // Hz difference between hemispheres
+let mirrorEnabled = true;
 
 function createEQ() {
     eqFilters = eqSettings.map((b) => {
@@ -49,9 +64,44 @@ function getMusicalFrequency() {
     return base * Math.pow(2, octave + step / 12);
 }
 
-// — end of EQ/filter setup —
+// — 3D starfield setup (p300h3) —
+function init3D() {
+    const geometry = new THREE.BufferGeometry();
+    const num = 2000;
+    const positions = new Float32Array(num * 3);
+    for (let i = 0; i < num; i++) {
+        const r = Math.random() * 40 + 10;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(Math.random() * 2 - 1);
+        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+        positions[i * 3 + 2] = r * Math.cos(phi);
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+        color: 0x88ff88,
+        size: 0.8,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+    starField = new THREE.Points(geometry, material);
+    scene.add(starField);
+}
+
+function animate3D(time) {
+    requestAnimationFrame(animate3D);
+    const t = time * 0.0002;
+    if (starField) {
+        starField.rotation.x = t * 0.5;
+        starField.rotation.y = t * 0.3;
+        starField.material.color.setHSL(t % 1, 0.7, 0.5);
+    }
+    renderer.render(scene, camera);
+}
 
 
+// — Node class combining both branches —
 class Node {
     constructor(x, y, opts = {}) {
         this.x = x;
@@ -66,6 +116,7 @@ class Node {
         this.freq = opts.freq || getMusicalFrequency();
         this.pan = opts.pan || 0;
         this.mirror = opts.mirror || null;
+        this.parent = opts.parent || null;
 
         this.osc = null;
         this.gainNode = null;
@@ -86,12 +137,10 @@ class Node {
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(1200, audioCtx.currentTime);
 
-        // Generate subtle noise blended into each node
+        // Subtle noise source blended into each node
         const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
         const data = noiseBuf.getChannelData(0);
-        for (let i = 0; i < data.length; i++) {
-            data[i] = Math.random() * 2 - 1;
-        }
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
         const noise = audioCtx.createBufferSource();
         noise.buffer = noiseBuf;
         noise.loop = true;
@@ -101,11 +150,11 @@ class Node {
         noiseFilter.frequency.value = 1000;
 
         const noiseGain = audioCtx.createGain();
-        noiseGain.gain.value = 0.02;  // very subtle noise
+        noiseGain.gain.value = 0.02;
 
         noise.connect(noiseFilter).connect(noiseGain);
 
-        // Each node has its ownGain
+        // Each node has its own gain
         this.gainNode = audioCtx.createGain();
         this.gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
 
@@ -113,21 +162,21 @@ class Node {
         this.panner = audioCtx.createStereoPanner();
         this.panner.pan.setValueAtTime(this.pan, audioCtx.currentTime);
 
-        // — LFO #1: gentle frequency modulation (0.1–0.4 Hz sine)
+        // LFO for gentle frequency modulation
         const lfo = audioCtx.createOscillator();
         lfo.type = 'sine';
-        lfo.frequency.value = Math.random() * 0.3 + 0.1; // between 0.1 and 0.4 Hz
+        lfo.frequency.value = Math.random() * 0.3 + 0.1; // 0.1-0.4 Hz
         const lfoGain = audioCtx.createGain();
-        lfoGain.gain.value = 5; // ±5 Hz depth
+        lfoGain.gain.value = 5; // Hz depth
         lfo.connect(lfoGain).connect(this.osc.frequency);
         lfo.start();
 
-        // — LFO #2: subtle amplitude modulation (0.05–0.25 Hz sine)
+        // LFO for subtle amplitude modulation
         const ampLfo = audioCtx.createOscillator();
         ampLfo.type = 'sine';
-        ampLfo.frequency.value = Math.random() * 0.2 + 0.05; // 0.05–0.25 Hz
+        ampLfo.frequency.value = Math.random() * 0.2 + 0.05; // 0.05-0.25 Hz
         const ampLfoGain = audioCtx.createGain();
-        ampLfoGain.gain.value = 0.02; 
+        ampLfoGain.gain.value = 0.02;
         ampLfo.connect(ampLfoGain).connect(this.gainNode.gain);
         ampLfo.start();
 
@@ -148,11 +197,37 @@ class Node {
     }
 }
 
-const nodes = [];
-let dragNode = null;
-let dragging = false;
 
-// From “main” branch: compute quadratic control point
+// — Particle effects (p300h3) —
+class Particle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 1.5;
+        this.vy = (Math.random() - 0.5) * 1.5;
+        this.alpha = 1;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha *= 0.96;
+    }
+    draw(ctx) {
+        ctx.fillStyle = `rgba(160,255,160,${this.alpha})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+const particles = [];
+
+function spawnParticles(x, y) {
+    for (let i = 0; i < 20; i++) particles.push(new Particle(x, y));
+}
+
+
+// — Utility: compute quadratic control point (main) —
 function computeControlPoint(startNode, endPos) {
     const dx = endPos.x - startNode.x;
     const dy = endPos.y - startNode.y;
@@ -163,10 +238,21 @@ function computeControlPoint(startNode, endPos) {
     };
 }
 
-// — DRAW LOOP (merges drawing logic from both branches) —
+
+// — DRAW LOOP (merged) —
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.lineWidth = 2;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#88ff88';
+    ctx.shadowBlur = 15;
+
+    // Update & draw particles (p300h3)
+    for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        particles[i].draw(ctx);
+        if (particles[i].alpha < 0.05) particles.splice(i, 1);
+    }
 
     // Draw edges (quadratic curves) for each node’s children
     for (const n of nodes) {
@@ -190,13 +276,11 @@ function draw() {
         ctx.fill();
     }
 
-    // If we’re in the middle of dragging a node to create a new one, draw that preview line
+    // If dragging, draw preview curve
     if (dragging && dragNode && dragNode.temp) {
         ctx.strokeStyle = dragNode.color;
         ctx.beginPath();
         ctx.moveTo(dragNode.x, dragNode.y);
-
-        // dragNode.temp.cp was computed in mousemove
         ctx.quadraticCurveTo(
             dragNode.temp.cp.x,
             dragNode.temp.cp.y,
@@ -206,18 +290,39 @@ function draw() {
         ctx.stroke();
     }
 
+    ctx.shadowBlur = 0;
     requestAnimationFrame(draw);
 }
 
 draw();
 
+
 function findNode(x, y) {
     return nodes.find(n => Math.hypot(n.x - x, n.y - y) < n.radius + 2);
 }
 
-// — MOUSE EVENTS FOR NODE‐GROWTH —
 
-// Start dragging if user mouses down on a node
+// — Remove a node and its mirror (p300h3) —
+function removeNode(node, skipMirror = false) {
+    if (!node || node === nodes[0]) return;
+    node.children.slice().forEach(edge => removeNode(edge.node));
+    if (node.osc) node.osc.stop();
+    if (node.gainNode) node.gainNode.disconnect();
+    if (node.parent) {
+        node.parent.children = node.parent.children.filter(e => e.node !== node);
+    }
+    nodes.splice(nodes.indexOf(node), 1);
+    if (!skipMirror && node.mirror && node.mirror !== node) {
+        const m = node.mirror;
+        node.mirror = null;
+        m.mirror = null;
+        removeNode(m, true);
+    }
+}
+
+
+// — MOUSE EVENTS FOR NODE‐GROWTH — 
+
 canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -229,7 +334,6 @@ canvas.addEventListener('mousedown', (e) => {
     }
 });
 
-// While dragging: compute a temporary control point & pointer position
 canvas.addEventListener('mousemove', (e) => {
     if (dragging) {
         const rect = canvas.getBoundingClientRect();
@@ -240,7 +344,6 @@ canvas.addEventListener('mousemove', (e) => {
     }
 });
 
-// On mouseup: commit the new node + its mirror and hook up edges
 canvas.addEventListener('mouseup', (e) => {
     if (dragging && dragNode) {
         const rect = canvas.getBoundingClientRect();
@@ -254,24 +357,27 @@ canvas.addEventListener('mouseup', (e) => {
         const freq = getMusicalFrequency();
 
         // Create the new child node
-        const newNode = new Node(x, y, { freq, pan });
+        const newNode = new Node(x, y, { freq, pan, parent: dragNode });
         nodes.push(newNode);
         dragNode.children.push({ node: newNode, cp });
+        spawnParticles(x, y);
 
-        // Create the mirrored twin on the opposite side (binaural offset)
-        const mirrorParent = dragNode.mirror || dragNode;
-        const mirrorX = 2 * mid - x;
-        const cpMirror = computeControlPoint(mirrorParent, { x: mirrorX, y });
-        const mirrorPan = mirrorX < mid ? -1 : 1;
-
-        const mirrorNode = new Node(mirrorX, y, {
-            freq: freq + BINAURAL_OFFSET,
-            pan: mirrorPan,
-            mirror: newNode
-        });
-        newNode.mirror = mirrorNode;
-        nodes.push(mirrorNode);
-        mirrorParent.children.push({ node: mirrorNode, cp: cpMirror });
+        if (mirrorEnabled) {
+            const mirrorParent = dragNode.mirror || dragNode;
+            const mirrorX = 2 * mid - x;
+            const cpMirror = computeControlPoint(mirrorParent, { x: mirrorX, y });
+            const mirrorPan = mirrorX < mid ? -1 : 1;
+            const mirrorNode = new Node(mirrorX, y, {
+                freq: freq + BINAURAL_OFFSET,
+                pan: mirrorPan,
+                mirror: newNode,
+                parent: mirrorParent
+            });
+            newNode.mirror = mirrorNode;
+            nodes.push(mirrorNode);
+            mirrorParent.children.push({ node: mirrorNode, cp: cpMirror });
+            spawnParticles(mirrorX, y);
+        }
 
         delete dragNode.temp;
         dragNode = null;
@@ -279,10 +385,28 @@ canvas.addEventListener('mouseup', (e) => {
     }
 });
 
-// — START BUTTON & EQ SLIDERS — 
+// Right-click to remove a node
+canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const node = findNode(x, y);
+    removeNode(node);
+});
+
+
+// — START BUTTON & CONTROLS — 
+
 const startBtn = document.getElementById('startBtn');
+const mirrorBtn = document.getElementById('mirrorBtn');
 const eqControls = document.getElementById('eqControls');
 const sliders = [];
+
+mirrorBtn.addEventListener('click', () => {
+    mirrorEnabled = !mirrorEnabled;
+    mirrorBtn.textContent = mirrorEnabled ? 'Mirror On' : 'Mirror Off';
+});
 
 startBtn.addEventListener('click', () => {
     if (!audioCtx) {
@@ -297,7 +421,7 @@ startBtn.addEventListener('click', () => {
         eqFilters[eqFilters.length - 1].connect(masterGain);
 
         // Create root node in center of screen, pan = 0 (center)
-        const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20, pan: 0 });
+        const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20, pan: 0, parent: null });
         rootNode.mirror = rootNode; // self‐mirror for the root
         nodes.push(rootNode);
 

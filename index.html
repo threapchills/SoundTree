@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SoundTree</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 </head>
 <body>
   <button id="startBtn">Start Drone</button>
+  <button id="mirrorBtn">Mirror On</button>
 
   <div id="info">Drag from a node to grow new sounds. Press 'S' to reseed.</div>
 
@@ -29,6 +31,7 @@
     </label>
   </div>
 
+  <canvas id="glCanvas"></canvas>
   <canvas id="treeCanvas"></canvas>
   <script src="script.js"></script>
 </body>
