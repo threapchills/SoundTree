@@ -1,22 +1,43 @@
 const canvas = document.getElementById('treeCanvas');
 const ctx = canvas.getContext('2d');
-const glCanvas = document.getElementById('glCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, alpha: true });
+
+// Background starfield – 2D version (enhanced) and 3D version (main)
+const bgCanvas = document.getElementById('glCanvas');
+const bgCtx = bgCanvas.getContext('2d');
+
+const renderer = new THREE.WebGLRenderer({ canvas: bgCanvas, alpha: true });
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.z = 80;
 renderer.setSize(window.innerWidth, window.innerHeight);
 
-let starField;
+// Prepare 2D stars
+const stars = [];
+for (let i = 0; i < 1500; i++) {
+    stars.push({
+        x: (Math.random() * 2 - 1) * 50,
+        y: (Math.random() * 2 - 1) * 50,
+        z: Math.random() * 40 + 10
+    });
+}
+
+// Kick off both animations
+animateStars(0);
 init3D();
 animate3D(0);
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
+bgCanvas.width = window.innerWidth;
+bgCanvas.height = window.innerHeight;
 
 window.addEventListener('resize', () => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+
+    bgCanvas.width = window.innerWidth;
+    bgCanvas.height = window.innerHeight;
+
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -28,9 +49,9 @@ let masterGain;
 // — from “main” branch: EQ/filter setup —
 let eqInput;
 let eqFilters = [];
-    const num = 1500;
-        color: 0x55aa55,
-        size: 0.6,
+const eqSettings = [
+    { freq: 60,   Q: 0.7 },
+    { freq: 200,  Q: 0.8 },
     { freq: 800,  Q: 0.6 },
     { freq: 2500, Q: 0.9 },
     { freq: 8000, Q: 0.8 }
@@ -48,27 +69,50 @@ function createEQ() {
         f.gain.value = 0;
         return f;
     });
-    // Chain them: 60 → 200 → 800 → 2500 → 8000
     for (let i = 0; i < eqFilters.length - 1; i++) {
         eqFilters[i].connect(eqFilters[i + 1]);
     }
     return eqFilters[0];
 }
 
-// Choose a random note from minor pentatonic around A3/A4
 function getMusicalFrequency() {
-    const base = 220;                     // A3 = 220 Hz
-    const scale = [0, 3, 5, 7, 10];       // minor pentatonic intervals
+    const base = 220;
+    const scale = [0, 3, 5, 7, 10];
     const octave = Math.random() > 0.5 ? 0 : 1;
     const step = scale[Math.floor(Math.random() * scale.length)];
     return base * Math.pow(2, octave + step / 12);
 }
 
-// — 3D starfield setup (p300h3) —
+// — 2D starfield animation (enhance-drone-sound-design) —
+function animateStars(time) {
+    requestAnimationFrame(animateStars);
+    const t = time * 0.0002;
+    bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+    for (const s of stars) {
+        // rotate around X/Y axes
+        const rx = s.x * Math.cos(t * 0.5) - s.z * Math.sin(t * 0.5);
+        const rz = s.x * Math.sin(t * 0.5) + s.z * Math.cos(t * 0.5);
+        const ry = s.y * Math.cos(t * 0.3) - rz * Math.sin(t * 0.3);
+        const z2 = ry * Math.sin(t * 0.3) + rz * Math.cos(t * 0.3);
+
+        const fov = 200;
+        const scale = fov / (fov + z2);
+        const x2 = rx * scale + bgCanvas.width / 2;
+        const y2 = ry * scale + bgCanvas.height / 2;
+        const alpha = 0.6 * scale;
+
+        bgCtx.fillStyle = `rgba(80,255,80,${alpha})`;
+        bgCtx.fillRect(x2, y2, scale * 2, scale * 2);
+    }
+}
+
+// — 3D starfield setup and animation (main) —
+let starField;
 function init3D() {
     const geometry = new THREE.BufferGeometry();
     const num = 2000;
     const positions = new Float32Array(num * 3);
+
     for (let i = 0; i < num; i++) {
         const r = Math.random() * 40 + 10;
         const theta = Math.random() * Math.PI * 2;
@@ -78,6 +122,7 @@ function init3D() {
         positions[i * 3 + 2] = r * Math.cos(phi);
     }
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
     const material = new THREE.PointsMaterial({
         color: 0x88ff88,
         size: 0.8,
@@ -100,19 +145,16 @@ function animate3D(time) {
     renderer.render(scene, camera);
 }
 
-
 // — Node class combining both branches —
 class Node {
     constructor(x, y, opts = {}) {
         this.x = x;
         this.y = y;
         this.radius = opts.radius || 8;
-        this.children = [];     // will hold { node: Node, cp: {x, y} }
+        this.children = [];     // holds { node, cp }
 
-        // Random colour (from codex branch)
         this.color = `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`;
 
-        // From main: each node has its own pitch & pan
         this.freq = opts.freq || getMusicalFrequency();
         this.pan = opts.pan || 0;
         this.mirror = opts.mirror || null;
@@ -132,15 +174,15 @@ class Node {
         this.osc.type = 'sawtooth';
         this.osc.frequency.setValueAtTime(this.freq, audioCtx.currentTime);
 
-        // A lowpass filter per node
         const filter = audioCtx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(1200, audioCtx.currentTime);
 
-        // Subtle noise source blended into each node
         const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
         const data = noiseBuf.getChannelData(0);
-        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        for (let i = 0; i < data.length; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
         const noise = audioCtx.createBufferSource();
         noise.buffer = noiseBuf;
         noise.loop = true;
@@ -151,39 +193,30 @@ class Node {
 
         const noiseGain = audioCtx.createGain();
         noiseGain.gain.value = 0.02;
-
         noise.connect(noiseFilter).connect(noiseGain);
 
-        // Each node has its own gain
         this.gainNode = audioCtx.createGain();
         this.gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
 
-        // Stereo panner per node (binaural effect)
         this.panner = audioCtx.createStereoPanner();
         this.panner.pan.setValueAtTime(this.pan, audioCtx.currentTime);
 
-        // LFO for gentle frequency modulation
         const lfo = audioCtx.createOscillator();
         lfo.type = 'sine';
-        lfo.frequency.value = Math.random() * 0.3 + 0.1; // 0.1-0.4 Hz
+        lfo.frequency.value = Math.random() * 0.3 + 0.1;
         const lfoGain = audioCtx.createGain();
-        lfoGain.gain.value = 5; // Hz depth
+        lfoGain.gain.value = 5;
         lfo.connect(lfoGain).connect(this.osc.frequency);
         lfo.start();
 
-        // LFO for subtle amplitude modulation
         const ampLfo = audioCtx.createOscillator();
         ampLfo.type = 'sine';
-        ampLfo.frequency.value = Math.random() * 0.2 + 0.05; // 0.05-0.25 Hz
+        ampLfo.frequency.value = Math.random() * 0.2 + 0.05;
         const ampLfoGain = audioCtx.createGain();
         ampLfoGain.gain.value = 0.02;
         ampLfo.connect(ampLfoGain).connect(this.gainNode.gain);
         ampLfo.start();
 
-        // Routing chain:
-        // osc → filter → gainNode
-        // noiseGain → gainNode
-        // gainNode → panner → eqInput → … → masterGain
         this.osc
             .connect(filter)
             .connect(this.gainNode);
@@ -196,7 +229,6 @@ class Node {
         noise.start();
     }
 }
-
 
 // — Particle effects (p300h3) —
 class Particle {
@@ -226,7 +258,6 @@ function spawnParticles(x, y) {
     for (let i = 0; i < 20; i++) particles.push(new Particle(x, y));
 }
 
-
 // — Utility: compute quadratic control point (main) —
 function computeControlPoint(startNode, endPos) {
     const dx = endPos.x - startNode.x;
@@ -238,7 +269,6 @@ function computeControlPoint(startNode, endPos) {
     };
 }
 
-
 // — DRAW LOOP (merged) —
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -247,7 +277,7 @@ function draw() {
     ctx.shadowColor = '#88ff88';
     ctx.shadowBlur = 15;
 
-    // Update & draw particles (p300h3)
+    // Update & draw particles
     for (let i = particles.length - 1; i >= 0; i--) {
         particles[i].update();
         particles[i].draw(ctx);
@@ -261,7 +291,6 @@ function draw() {
             ctx.beginPath();
             ctx.moveTo(n.x, n.y);
 
-            // If a custom control point exists, use it; otherwise midpoint
             const cp = edge.cp || { x: (n.x + edge.node.x) / 2, y: (n.y + edge.node.y) / 2 };
             ctx.quadraticCurveTo(cp.x, cp.y, edge.node.x, edge.node.y);
             ctx.stroke();
@@ -296,11 +325,9 @@ function draw() {
 
 draw();
 
-
 function findNode(x, y) {
     return nodes.find(n => Math.hypot(n.x - x, n.y - y) < n.radius + 2);
 }
-
 
 // — Remove a node and its mirror (p300h3) —
 function removeNode(node, skipMirror = false) {
@@ -320,9 +347,7 @@ function removeNode(node, skipMirror = false) {
     }
 }
 
-
-// — MOUSE EVENTS FOR NODE‐GROWTH — 
-
+// — MOUSE EVENTS FOR NODE‐GROWTH —
 canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -385,7 +410,6 @@ canvas.addEventListener('mouseup', (e) => {
     }
 });
 
-// Right-click to remove a node
 canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
@@ -395,9 +419,7 @@ canvas.addEventListener('contextmenu', (e) => {
     removeNode(node);
 });
 
-
-// — START BUTTON & CONTROLS — 
-
+// — START BUTTON & CONTROLS —
 const startBtn = document.getElementById('startBtn');
 const mirrorBtn = document.getElementById('mirrorBtn');
 const eqControls = document.getElementById('eqControls');
@@ -410,25 +432,21 @@ mirrorBtn.addEventListener('click', () => {
 
 startBtn.addEventListener('click', () => {
     if (!audioCtx) {
-        // Initialize AudioContext & master gain
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         masterGain = audioCtx.createGain();
         masterGain.connect(audioCtx.destination);
         masterGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
 
-        // Create EQ chain and route its last filter into masterGain
         eqInput = createEQ();
         eqFilters[eqFilters.length - 1].connect(masterGain);
 
-        // Create root node in center of screen, pan = 0 (center)
         const rootNode = new Node(canvas.width / 2, canvas.height / 2, { radius: 20, pan: 0, parent: null });
-        rootNode.mirror = rootNode; // self‐mirror for the root
+        rootNode.mirror = rootNode;
         nodes.push(rootNode);
 
         startBtn.style.display = 'none';
-        eqControls.style.display = 'flex'; // reveal the sliders
+        eqControls.style.display = 'flex';
 
-        // Hook up each slider’s “input” to its corresponding filter’s gain
         const ids = ['darkSlider', 'brownSlider', 'pinkSlider', 'greenSlider', 'whiteSlider'];
         ids.forEach((id, i) => {
             const el = document.getElementById(id);

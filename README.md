@@ -9,6 +9,10 @@ After starting, use the "Dark", "Brown", "Pink", "Green" and "White" sliders to 
 
 Use the **Mirror** button to toggle symmetrical drawing of branches. Right‑click any node to delete it along with its mirrored counterpart.
 
+sgquxl-codex/enhance-drone-sound-design
+A swirling starfield renders on a separate canvas behind the tree, creating a cosmic backdrop for the particle trails as you spawn new nodes.  The visual effects are intentionally subtle so the interactive sound tree remains the focus.
+=======
 A 3D starfield renders behind the canvas, creating a cosmic backdrop for the particle trails as you spawn new nodes.
 The visual effects are intentionally subtle so the interactive sound tree remains the focus.
+main
 

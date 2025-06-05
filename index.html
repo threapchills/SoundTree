@@ -8,12 +8,18 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 </head>
 <body>
+sgquxl-codex/enhance-drone-sound-design
+<button id="startBtn">Start Drone</button>
+<button id="mirrorBtn">Mirror On</button>
+<div id="eqControls" style="display:none;">
+
   <button id="startBtn">Start Drone</button>
   <button id="mirrorBtn">Mirror On</button>
 
   <div id="info">Drag from a node to grow new sounds. Press 'S' to reseed.</div>
 
   <div id="eqControls" style="display:none;">
+  main
     <label>Dark
       <input type="range" id="darkSlider" min="-12" max="12" value="0" step="0.1">
     </label>
@@ -29,10 +35,17 @@
     <label>White
       <input type="range" id="whiteSlider" min="-8" max="8" value="0" step="0.1">
     </label>
+ sgquxl-codex/enhance-drone-sound-design
+</div>
+<canvas id="glCanvas"></canvas>
+<canvas id="treeCanvas"></canvas>
+<script src="script.js"></script>
+=======
   </div>
 
   <canvas id="glCanvas"></canvas>
   <canvas id="treeCanvas"></canvas>
   <script src="script.js"></script>
+ main
 </body>
 </html>
