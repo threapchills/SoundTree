@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SoundTree</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 </head>
 <body>
 <button id="startBtn">Start Drone</button>
+<button id="mirrorBtn">Mirror On</button>
 <div id="eqControls" style="display:none;">
     <label>Dark
         <input type="range" id="darkSlider" min="-12" max="12" value="0" step="0.1">
@@ -25,6 +27,7 @@
         <input type="range" id="whiteSlider" min="-8" max="8" value="0" step="0.1">
     </label>
 </div>
+<canvas id="glCanvas"></canvas>
 <canvas id="treeCanvas"></canvas>
 <script src="script.js"></script>
 </body>
