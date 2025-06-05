@@ -28,9 +28,9 @@ let masterGain;
 // — from “main” branch: EQ/filter setup —
 let eqInput;
 let eqFilters = [];
-const eqSettings = [
-    { freq: 60,   Q: 0.7 },
-    { freq: 200,  Q: 0.8 },
+    const num = 1500;
+        color: 0x55aa55,
+        size: 0.6,
     { freq: 800,  Q: 0.6 },
     { freq: 2500, Q: 0.9 },
     { freq: 8000, Q: 0.8 }
